@@ -1,0 +1,1732 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1b5e20">
+    <title>Visor ReNAF · Mapeo de NAF's y Recursos Hídricos</title>
+    <link rel="shortcut icon" href="https://www.argentina.gob.ar/profiles/argentinagobar/themes/argentinagobar/argentinagobar_theme/favicon.ico" type="image/vnd.microsoft.icon">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Hojas de estilo Leaflet, MarkerCluster y Tree Control -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.control.layers.tree@1.1.0/L.Control.Layers.Tree.css" />
+
+    <style>
+        :root {
+            --verde: #15803d;
+            --verde-oscuro: #166534;
+            --verde-claro: #dcfce7;
+            --tinta: #0f172a;
+            --gris: #475569;
+            --gris-claro: #64748b;
+            --borde: #e2e8f0;
+            --fondo-suave: #f8fafc;
+            --panel-ancho: 334px;
+        }
+
+        * { box-sizing: border-box; }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+            color: var(--tinta);
+            background: #f1f5f9;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        #map {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            background: #dfe7df;
+            z-index: 0;
+        }
+
+        /* ==============================
+           CLÚSTERES POR CATEGORÍA
+           ============================== */
+        .cluster-agricultura { background-color: rgba(46, 125, 50, 0.4); }
+        .cluster-agricultura div { background-color: rgba(46, 125, 50, 0.85); color: #fff; font-weight: 700; }
+
+        .cluster-ganaderia { background-color: rgba(230, 81, 0, 0.4); }
+        .cluster-ganaderia div { background-color: rgba(230, 81, 0, 0.85); color: #fff; font-weight: 700; }
+
+        .cluster-otra { background-color: rgba(84, 110, 122, 0.4); }
+        .cluster-otra div { background-color: rgba(84, 110, 122, 0.85); color: #fff; font-weight: 700; }
+
+        .cluster-pesca { background-color: rgba(0, 131, 143, 0.4); }
+        .cluster-pesca div { background-color: rgba(0, 131, 143, 0.85); color: #fff; font-weight: 700; }
+
+        .cluster-turismo { background-color: rgba(156, 39, 176, 0.4); }
+        .cluster-turismo div { background-color: rgba(156, 39, 176, 0.85); color: #fff; font-weight: 700; }
+
+        .cluster-caza { background-color: rgba(121, 85, 72, 0.4); }
+        .cluster-caza div { background-color: rgba(121, 85, 72, 0.85); color: #fff; font-weight: 700; }
+
+        .cluster-artesanias { background-color: rgba(233, 30, 99, 0.4); }
+        .cluster-artesanias div { background-color: rgba(233, 30, 99, 0.85); color: #fff; font-weight: 700; }
+
+        .cluster-agroindustria { background-color: rgba(245, 124, 0, 0.4); }
+        .cluster-agroindustria div { background-color: rgba(245, 124, 0, 0.85); color: #fff; font-weight: 700; }
+
+        /* ==============================
+           PANEL IZQUIERDO DE TOTALES
+           ============================== */
+        .panel-resumen {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            z-index: 1200;
+            width: var(--panel-ancho);
+            max-height: calc(100% - 32px);
+            display: flex;
+            flex-direction: column;
+            background: #ffffff;
+            border: 1px solid var(--borde);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow:
+                0 12px 32px rgba(15, 23, 42, 0.16),
+                0 2px 6px rgba(15, 23, 42, 0.06);
+            transition: box-shadow 0.2s ease;
+        }
+
+        .panel-cabecera {
+            position: relative;
+            flex: 0 0 auto;
+            padding: 14px 16px 14px;
+            color: var(--tinta);
+            background: #ffffff;
+            border-bottom: 1px solid var(--borde);
+        }
+
+        .panel-marca {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding-right: 36px;
+        }
+
+        .panel-logo {
+            display: inline-flex;
+            flex: none;
+            color: var(--verde);
+        }
+
+        .panel-kicker {
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--verde-oscuro);
+        }
+
+        .panel-titulo {
+            margin: 2px 0 0;
+            font-size: 17px;
+            line-height: 1.15;
+            font-weight: 800;
+            letter-spacing: -0.01em;
+            color: var(--tinta);
+        }
+
+        .panel-subtitulo {
+            margin: 2px 0 0;
+            font-size: 10.5px;
+            line-height: 1.3;
+            color: var(--gris);
+        }
+
+        .panel-toggle {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            width: 28px;
+            height: 28px;
+            display: grid;
+            place-items: center;
+            padding: 0;
+            color: var(--gris);
+            background: var(--fondo-suave);
+            border: 1px solid var(--borde);
+            border-radius: 50%;
+            cursor: pointer;
+            transition: background 0.15s ease, transform 0.2s ease;
+        }
+
+        .panel-toggle:hover { background: #f1f5f9; }
+        .panel-toggle:focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; }
+        .panel-toggle svg { transition: transform 0.2s ease; }
+        .panel-resumen.is-collapsed .panel-toggle svg { transform: rotate(180deg); }
+
+        .panel-total {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 12px;
+            padding: 10px 12px;
+            background: var(--verde-claro);
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+        }
+
+        .panel-total-bloque { display: flex; flex-direction: column; gap: 2px; }
+
+        .panel-total-label {
+            font-size: 9.5px;
+            font-weight: 700;
+            letter-spacing: 0.10em;
+            text-transform: uppercase;
+            color: var(--gris);
+        }
+
+        .panel-total-num {
+            font-size: 30px;
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: -0.02em;
+            color: var(--verde-oscuro);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .panel-total-sub {
+            padding-bottom: 2px;
+            font-size: 10px;
+            line-height: 1.25;
+            text-align: right;
+            color: var(--gris);
+        }
+
+        .panel-cuerpo {
+            flex: 1 1 auto;
+            min-height: 0;
+            padding: 12px 12px 6px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 transparent;
+        }
+
+        .panel-cuerpo::-webkit-scrollbar { width: 7px; }
+        .panel-cuerpo::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+
+        .panel-seccion-titulo {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 8px;
+            margin: 0 4px 8px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--gris);
+        }
+
+        .panel-pista {
+            font-size: 9px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            text-transform: none;
+            color: var(--gris-claro);
+            white-space: nowrap;
+        }
+
+        .lista-actividades {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .actividad {
+            position: relative;
+            display: grid;
+            grid-template-columns: 14px minmax(0, 1fr) auto 16px;
+            align-items: center;
+            gap: 9px;
+            width: 100%;
+            padding: 8px 10px;
+            font: inherit;
+            color: var(--tinta);
+            text-align: left;
+            background: #ffffff;
+            border: 1px solid var(--borde);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+        }
+
+        .actividad:hover {
+            background: var(--fondo-suave);
+            border-color: #cbd5e1;
+        }
+
+        .actividad:not(.is-off) {
+            background: #f0fdf4;
+            border-color: #bbf7d0;
+        }
+
+        .actividad:not(.is-off):hover {
+            background: var(--verde-claro);
+            border-color: #86efac;
+        }
+
+        .actividad:focus-visible {
+            outline: 2px solid var(--verde);
+            outline-offset: 1px;
+        }
+
+        .punto-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--color);
+            box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.06);
+        }
+
+        .actividad-texto {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 0;
+        }
+
+        .actividad-nombre {
+            overflow: hidden;
+            font-size: 12.5px;
+            font-weight: 600;
+            line-height: 1.2;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .actividad-barra {
+            display: block;
+            width: 100%;
+            height: 3px;
+            overflow: hidden;
+            background: #e2e8f0;
+            border-radius: 99px;
+        }
+
+        .actividad-barra > span {
+            display: block;
+            height: 100%;
+            width: 0;
+            background: var(--color);
+            border-radius: 99px;
+            transition: width 0.45s ease;
+        }
+
+        .actividad-conteo {
+            font-size: 12.5px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: -0.01em;
+        }
+
+        .actividad-ojo {
+            display: grid;
+            place-items: center;
+            color: #94a3b8;
+        }
+
+        .actividad-ojo svg { display: block; }
+        .actividad .ojo-off { display: none; }
+        .actividad.is-off .ojo-on { display: none; }
+        .actividad.is-off .ojo-off { display: block; }
+
+        .actividad.is-off {
+            color: var(--gris);
+        }
+
+        .actividad.is-off .actividad-nombre { font-weight: 500; }
+        .actividad.is-off .actividad-conteo { color: var(--gris); }
+
+        .actividad.is-off .punto-color {
+            background: #cbd5e1;
+            box-shadow: none;
+        }
+
+        .actividad.is-off .actividad-barra > span { background: #cbd5e1; }
+
+        .seccion-regiones {
+            margin-top: 13px;
+            padding-top: 10px;
+            border-top: 1px solid var(--borde);
+        }
+
+        .boton-regiones {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            padding: 5px 4px 8px;
+            font: inherit;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: var(--gris);
+            background: none;
+            border: 0;
+            cursor: pointer;
+        }
+
+        .boton-regiones:hover { color: var(--verde-oscuro); }
+        .boton-regiones:focus-visible { outline: 2px solid var(--verde); outline-offset: 2px; }
+        .boton-regiones .chevron { transition: transform 0.2s ease; }
+        .boton-regiones[aria-expanded="false"] .chevron { transform: rotate(-90deg); }
+
+        .lista-regiones {
+            display: flex;
+            flex-direction: column;
+            gap: 7px;
+            padding: 0 4px 2px;
+        }
+
+        .lista-regiones.is-hidden { display: none; }
+
+        .grafico-regiones {
+            width: 100%;
+            min-height: 200px;
+            margin-top: 2px;
+        }
+
+        .grafico-regiones svg {
+            display: block;
+            margin: 0 auto;
+        }
+
+        .leyenda-regiones {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+            gap: 6px 12px;
+            padding: 4px 4px 2px;
+        }
+
+        .leyenda-region {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .leyenda-color {
+            flex: none;
+            width: 9px;
+            height: 9px;
+            background: var(--color);
+            border-radius: 50%;
+            box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.06);
+        }
+
+        .leyenda-nombre {
+            flex: 1;
+            overflow: hidden;
+            font-size: 11.5px;
+            font-weight: 600;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .leyenda-valor {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--gris);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .panel-pie {
+            flex: 0 0 auto;
+            padding: 9px 16px 11px;
+            font-size: 10px;
+            line-height: 1.35;
+            color: var(--gris);
+            background: var(--fondo-suave);
+            border-top: 1px solid var(--borde);
+        }
+
+        .panel-resumen.is-collapsed .panel-cuerpo,
+        .panel-resumen.is-collapsed .panel-pie,
+        .panel-resumen.is-collapsed .panel-subtitulo {
+            display: none;
+        }
+
+        .panel-cargando {
+            padding: 18px 10px;
+            font-size: 12px;
+            color: var(--gris);
+            text-align: center;
+        }
+
+        /* ==============================
+           CONTROLES DE LEAFLET
+           ============================== */
+        .leaflet-control-layers,
+        .control-buscador {
+            padding: 10px 14px;
+            background: #ffffff;
+            border: 1px solid var(--borde);
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+            max-height: 42vh;
+            overflow-y: auto;
+            margin-bottom: 10px !important;
+            scrollbar-width: thin;
+        }
+
+        .menu-titulo-control {
+            margin-bottom: 6px;
+            padding-bottom: 5px;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--tinta);
+            border-bottom: 1px solid var(--borde);
+        }
+
+        .leaflet-control-layers .leaflet-layerstree-node {
+            font-size: 12.5px;
+            line-height: 1.55;
+        }
+
+        .leaflet-control-layers .leaflet-layerstree-header-name {
+            color: var(--tinta);
+        }
+
+        .leaflet-control-layers .leaflet-layerstree-header.leaflet-layerstree-nevershow {
+            display: none;
+        }
+
+        .tree-count {
+            display: inline-block;
+            margin-left: 5px;
+            padding: 0 6px;
+            font-size: 10.5px;
+            font-weight: 700;
+            line-height: 16px;
+            color: var(--verde-oscuro);
+            vertical-align: 1px;
+            background: var(--verde-claro);
+            border-radius: 99px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .leaflet-layerstree-sel-all-checkbox { accent-color: var(--verde); }
+
+        .custom-pin-icon {
+            background: transparent;
+            border: none;
+        }
+
+        .etiqueta-rio {
+            padding: 2px 5px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #01579b;
+            background: rgba(255, 255, 255, 0.88);
+            border: 1px solid #0288d1;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .etiqueta-depto {
+            padding: 2px 5px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #5b21b6;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #8b5cf6;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .etiqueta-provincia {
+            padding: 2px 5px;
+            font-size: 11px;
+            font-weight: 700;
+            color: #0f172a;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #000000;
+            border-radius: 4px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+        }
+
+        .control-buscador { width: 250px; }
+
+        .control-buscador input[type="text"] {
+            width: 100%;
+            padding: 6px 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            font-style: italic;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+
+        .control-buscador button {
+            padding: 5px 12px;
+            font-size: 13px;
+            color: #333;
+            background-color: #ffffff;
+            border: 1px solid #adadad;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .control-buscador button:hover {
+            background-color: #e6e6e6;
+            border-color: #adadad;
+        }
+
+        /* Popups */
+        .popup-contenido {
+            min-width: 230px;
+            font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+            font-size: 12.5px;
+            line-height: 1.45;
+            color: var(--tinta);
+        }
+
+        .popup-contenido h4 {
+            margin: 0 0 4px;
+            font-size: 13.5px;
+            color: #2c3e50;
+            word-break: break-word;
+        }
+
+        .popup-actividades {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin: 6px 0 8px;
+        }
+
+        .popup-actividad {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 2px 7px;
+            font-size: 10.5px;
+            font-weight: 600;
+            color: #2c3e50;
+            background: #f1f5f1;
+            border-radius: 99px;
+        }
+
+        .popup-actividad::before {
+            content: "";
+            width: 7px;
+            height: 7px;
+            background: var(--color);
+            border-radius: 50%;
+        }
+
+        .popup-dato { margin: 2px 0; }
+        .popup-dato b { color: #4b5563; font-weight: 600; }
+
+        /* ==============================
+           RESPONSIVE
+           ============================== */
+        @media (max-width: 700px) {
+            .panel-resumen {
+                top: auto;
+                right: 10px;
+                bottom: 10px;
+                left: 10px;
+                width: auto;
+                max-height: 52vh;
+                border-radius: 14px;
+            }
+
+            .panel-cabecera { padding: 12px 14px; }
+            .panel-titulo { font-size: 16px; }
+            .panel-subtitulo { font-size: 10px; }
+            .panel-total { margin-top: 10px; }
+            .panel-total-num { font-size: 27px; }
+            .panel-cuerpo { padding: 10px 10px 6px; }
+            .panel-pista { display: none; }
+            .leaflet-control-layers { max-height: 34vh; }
+            .control-buscador { width: 220px; }
+        }
+
+        @media (max-width: 420px) {
+            .control-buscador { width: 180px; }
+            .panel-total-sub { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="map" role="application" aria-label="Mapa de puntos georreferenciados ReNAF"></div>
+
+<aside id="panel-resumen" class="panel-resumen" aria-label="Resumen de actividades ReNAF">
+    <header class="panel-cabecera">
+        <div class="panel-marca">
+            <span class="panel-logo" aria-hidden="true">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 22c5-3 8-7 8-11a8 8 0 1 0-16 0c0 4 3 8 8 11z" fill="currentColor"></path>
+                    <circle cx="12" cy="11" r="3" fill="#ffffff"></circle>
+                </svg>
+            </span>
+            <div>
+                <div class="panel-kicker">ReNAF · Argentina</div>
+                <h1 class="panel-titulo">Información general</h1>
+                <p class="panel-subtitulo">Puntos georreferenciados · ReNAF</p>
+            </div>
+        </div>
+
+        <button id="btn-panel-toggle" class="panel-toggle" type="button"
+                aria-expanded="true" aria-controls="panel-cuerpo" title="Ocultar panel">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
+                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 15 12 9 18 15"></polyline>
+            </svg>
+        </button>
+
+        <div class="panel-total">
+            <div class="panel-total-bloque">
+                <span class="panel-total-label">Total país</span>
+                <span id="total-pais" class="panel-total-num">—</span>
+            </div>
+            <span class="panel-total-sub">puntos<br>georreferenciados</span>
+        </div>
+    </header>
+
+    <div id="panel-cuerpo" class="panel-cuerpo">
+        <div class="panel-seccion-titulo">
+            <span>Actividades</span>
+            <span class="panel-pista">clic para mostrar u ocultar</span>
+        </div>
+
+        <div id="lista-actividades" class="lista-actividades" role="group" aria-label="Actividades">
+            <div class="panel-cargando">Cargando datos…</div>
+        </div>
+
+        <section class="seccion-regiones">
+            <button id="btn-regiones" class="boton-regiones" type="button"
+                    aria-expanded="true" aria-controls="lista-regiones">
+                <span>Totales por región</span>
+                <svg class="chevron" viewBox="0 0 24 24" width="14" height="14" fill="none"
+                     stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                     stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+            </button>
+            <div id="lista-regiones" class="lista-regiones">
+                <div class="panel-cargando">Cargando datos…</div>
+            </div>
+        </section>
+    </div>
+
+    <footer class="panel-pie">
+        Un punto puede declarar más de una actividad, por eso la suma de las filas puede superar el total país.
+    </footer>
+</aside>
+
+<!-- Librerías JS necesarias -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet.control.layers.tree@1.1.0/L.Control.Layers.Tree.js"></script>
+<!-- Google Charts: gráfico de tortas 3D por región -->
+<script src="https://www.gstatic.com/charts/loader.js"></script>
+
+<script>
+(function () {
+    'use strict';
+
+    /* =========================================================
+       1. CONFIGURACIÓN GENERAL
+       ========================================================= */
+    const ACTIVIDADES = [
+        { key: 'Agricultura',   label: 'Agricultura',   color: '#2e7d32', columna: null },
+        { key: 'Ganaderia',     label: 'Ganadería',     color: '#e65100', columna: null },
+        { key: 'Otra',          label: 'Otra',          color: '#546e7a', columna: null },
+        { key: 'Pesca',         label: 'Pesca',         color: '#00838f', columna: 'porcentaje_pesca' },
+        { key: 'Turismo',       label: 'Turismo',       color: '#9c27b0', columna: 'porcentaje_turismo' },
+        { key: 'Caza',          label: 'Caza',          color: '#795548', columna: 'porcentaje_caza' },
+        { key: 'Artesanias',    label: 'Artesanías',    color: '#e91e63', columna: 'porcentaje_artesanias' },
+        { key: 'Agroindustria', label: 'Agroindustria', color: '#f57c00', columna: 'porcentaje_agroindustria' }
+    ];
+
+    const POR_CLAVE = {};
+    const mapaColores = {};
+    const claseCluster = {};
+    ACTIVIDADES.forEach(function (act) {
+        POR_CLAVE[act.key] = act;
+        mapaColores[act.key] = act.color;
+        claseCluster[act.key] = 'cluster-' + act.key.toLowerCase();
+    });
+
+    // Categorías principales: son las que llegan en la columna "Actividad".
+    // Las restantes (Pesca, Turismo, Caza, Artesanías y Agroindustria) se
+    // construyen a partir de sus columnas porcentuales, igual que el visor
+    // de referencia.
+    const configCategorias = {
+        Agricultura: claseCluster.Agricultura,
+        Ganaderia: claseCluster.Ganaderia,
+        Otra: claseCluster.Otra,
+        Agroindustria: claseCluster.Agroindustria
+    };
+
+    const formateador = new Intl.NumberFormat('es-AR');
+    const fmt = function (n) { return formateador.format(n || 0); };
+    const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    const esc = function (valor) {
+        return String(valor === null || valor === undefined ? '' : valor)
+            .replace(/[&<>"']/g, function (c) { return ESCAPES[c]; });
+    };
+    const esMovil = window.matchMedia('(max-width: 700px)').matches;
+    const BOUNDS_AR = L.latLngBounds([[-55.2, -73.7], [-21.6, -53.4]]);
+
+    /* =========================================================
+       2. MAPA Y CAPAS BASE
+       ========================================================= */
+    const map = L.map('map', { zoomControl: false }).setView([-38.416097, -63.616672], 5);
+
+    L.control.zoom({ position: esMovil ? 'topleft' : 'bottomright' }).addTo(map);
+
+    // Capa base única, igual que el visor de referencia (MapTiles API).
+    L.tileLayer('https://maptiles.p.rapidapi.com/es/map/v1/{z}/{x}/{y}.png?rapidapi-key=0501f3f404msh0d6c6801fc089a8p1bbb94jsn87f86fde6155', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.maptilesapi.com/">MapTiles API</a>, &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
+
+    // Pane exclusivo para las capas de actividades porcentuales (Pesca,
+    // Turismo, Caza, Artesanías y Agroindustria). Al estar por encima del
+    // pane de marcadores, sus puntos se ven con el color de la actividad
+    // cuando se activan y desaparecen al desactivarlas.
+    map.createPane('panePorcentajes');
+    map.getPane('panePorcentajes').style.zIndex = 640;
+
+    // Panes para los límites administrativos: Departamentos y Provincias
+    // quedan por debajo de los marcadores, y Provincias por encima de
+    // Departamentos sin importar el orden en que se activen las capas.
+    map.createPane('paneDepartamentos');
+    map.getPane('paneDepartamentos').style.zIndex = 430;
+    map.createPane('paneProvincias');
+    map.getPane('paneProvincias').style.zIndex = 440;
+
+    const capaSatelital = L.tileLayer('https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.google.com/maps">Google Maps</a>'
+    });
+
+    function ajustarVistaInicial() {
+        if (esMovil) {
+            map.setView([-38.416097, -63.616672], 4);
+        } else {
+            map.fitBounds(BOUNDS_AR, {
+                paddingTopLeft: [360, 24],
+                paddingBottomRight: [24, 24]
+            });
+        }
+    }
+    ajustarVistaInicial();
+
+    /* =========================================================
+       3. ICONOS Y CLÚSTERES
+       ========================================================= */
+    function crearIconoPin(colorHex) {
+        const svgPin =
+            '<svg xmlns="https://www.w3.org/2000/svg" viewBox="0 0 24 36" width="24" height="36">' +
+                '<path fill="' + colorHex + '" stroke="#FFFFFF" stroke-width="1.5" ' +
+                      'd="M12 0C5.37 0 0 5.37 0 12c0 9 12 24 12 24s12-15 12-24c0-6.63-5.37-12-12-12z"/>' +
+                '<circle cx="12" cy="12" r="4" fill="#FFFFFF"/>' +
+            '</svg>';
+
+        return L.divIcon({
+            className: 'custom-pin-icon',
+            html: svgPin,
+            iconSize: [24, 36],
+            iconAnchor: [12, 36],
+            popupAnchor: [0, -32]
+        });
+    }
+
+    function crearGrupoCluster(claseCss, opciones) {
+        const config = {
+            chunkedLoading: true,
+            chunkInterval: 120,
+            chunkDelay: 30,
+            iconCreateFunction: function (cluster) {
+                const count = cluster.getChildCount();
+                return new L.DivIcon({
+                    html: '<div><span>' + count + '</span></div>',
+                    className: 'marker-cluster ' + claseCss,
+                    iconSize: new L.Point(40, 40)
+                });
+            }
+        };
+
+        if (opciones) {
+            Object.keys(opciones).forEach(function (clave) {
+                config[clave] = opciones[clave];
+            });
+        }
+
+        return L.markerClusterGroup(config);
+    }
+
+    /* =========================================================
+       4. RECURSOS HÍDRICOS
+       ========================================================= */
+    const capaHidrica = L.geoJSON(null, {
+        style: function () {
+            return { color: '#0288d1', weight: 2, opacity: 0.8 };
+        },
+        onEachFeature: function (feature, layer) {
+            if (!feature.properties) return;
+            const nombreCauce = feature.properties.fna || feature.properties.NOMBRE || feature.properties.nombre;
+            if (!nombreCauce) return;
+            layer.bindTooltip(nombreCauce, {
+                permanent: false,
+                direction: 'center',
+                className: 'etiqueta-rio',
+                sticky: true
+            });
+            layer.bindPopup('<b>Recurso hídrico:</b> ' + esc(nombreCauce));
+        }
+    });
+
+    fetch('recursos_hidricos.json')
+        .then(function (res) { return res.json(); })
+        .then(function (geoData) { capaHidrica.addData(geoData); })
+        .catch(function (err) { console.error('Error cargando recursos_hidricos.json:', err); });
+
+    /* =========================================================
+       4.1 DEPARTAMENTOS (carga diferida)
+       ========================================================= */
+    const capaDepartamentos = L.geoJSON(null, {
+        pane: 'paneDepartamentos',
+        style: function () {
+            return {
+                color: '#7c3aed',
+                weight: 1.4,
+                opacity: 0.95,
+                fill: true,
+                fillColor: '#7c3aed',
+                fillOpacity: 0
+            };
+        },
+        onEachFeature: function (feature, layer) {
+            const props = feature.properties || {};
+            const nombre = props.nam || props.fna || 'Sin nombre';
+
+            layer.bindTooltip(esc(nombre), {
+                permanent: false,
+                direction: 'center',
+                className: 'etiqueta-depto',
+                sticky: true
+            });
+            layer.bindPopup('<div class="popup-contenido"><h4>' + esc(nombre) + '</h4></div>');
+
+            layer.on('mouseover', function () {
+                layer.setStyle({ color: '#5b21b6', weight: 2.6, opacity: 1 });
+                layer.bringToFront();
+            });
+            layer.on('mouseout', function () {
+                capaDepartamentos.resetStyle(layer);
+            });
+        }
+    });
+
+    let estadoDepartamentos = 'inicial'; // inicial | cargando | listo | error
+
+    function cargarDepartamentos() {
+        if (estadoDepartamentos === 'cargando' || estadoDepartamentos === 'listo') return;
+
+        estadoDepartamentos = 'cargando';
+        fetch('deptos.geojson')
+            .then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .then(function (geoData) {
+                capaDepartamentos.addData(geoData);
+                estadoDepartamentos = 'listo';
+            })
+            .catch(function (err) {
+                estadoDepartamentos = 'error';
+                console.error('Error cargando deptos.geojson:', err);
+            });
+    }
+
+    map.on('layeradd', function (e) {
+        if (e.layer === capaDepartamentos) cargarDepartamentos();
+    });
+
+    /* =========================================================
+       4.2 PROVINCIAS (carga diferida)
+       ========================================================= */
+    const capaProvincias = L.geoJSON(null, {
+        pane: 'paneProvincias',
+        style: function () {
+            return {
+                color: '#000000',
+                weight: 1.4,
+                opacity: 0.95,
+                fill: true,
+                fillColor: '#000000',
+                fillOpacity: 0
+            };
+        },
+        onEachFeature: function (feature, layer) {
+            const props = feature.properties || {};
+            const nombre = props.nam || props.fna || 'Sin nombre';
+
+            layer.bindTooltip(esc(nombre), {
+                permanent: false,
+                direction: 'center',
+                className: 'etiqueta-provincia',
+                sticky: true
+            });
+            layer.bindPopup('<div class="popup-contenido"><h4>' + esc(nombre) + '</h4></div>');
+
+            layer.on('mouseover', function () {
+                layer.setStyle({ color: '#000000', weight: 2.6, opacity: 1 });
+                layer.bringToFront();
+            });
+            layer.on('mouseout', function () {
+                capaProvincias.resetStyle(layer);
+            });
+        }
+    });
+
+    let estadoProvincias = 'inicial'; // inicial | cargando | listo | error
+
+    function cargarProvincias() {
+        if (estadoProvincias === 'cargando' || estadoProvincias === 'listo') return;
+
+        estadoProvincias = 'cargando';
+        fetch('pcias.geojson')
+            .then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            })
+            .then(function (geoData) {
+                capaProvincias.addData(geoData);
+                estadoProvincias = 'listo';
+            })
+            .catch(function (err) {
+                estadoProvincias = 'error';
+                console.error('Error cargando pcias.geojson:', err);
+            });
+    }
+
+    map.on('layeradd', function (e) {
+        if (e.layer === capaProvincias) cargarProvincias();
+    });
+
+    /* =========================================================
+       5. CONTROLES DE CAPAS
+       ========================================================= */
+    const arbolCapas = [
+        { label: 'Recursos Hídricos', layer: capaHidrica },
+        { label: 'Provincias', layer: capaProvincias },
+        { label: 'Departamentos', layer: capaDepartamentos },
+        { label: 'Híbrido Satelital', layer: capaSatelital }
+    ];
+
+    const treeControlCapas = L.control.layers.tree(null, arbolCapas, {
+        namedToggle: false,
+        collapseAll: false,
+        expandAll: false,
+        collapsed: false,
+        position: 'topright'
+    }).addTo(map);
+
+    function agregarTituloControl(control, texto) {
+        const container = control && control.getContainer();
+        if (!container) return;
+        const tituloDiv = document.createElement('div');
+        tituloDiv.className = 'menu-titulo-control';
+        tituloDiv.innerText = texto;
+        container.insertBefore(tituloDiv, container.firstChild);
+    }
+    agregarTituloControl(treeControlCapas, '- Control de Capas');
+
+    /* =========================================================
+       6. BUSCADOR POR RL
+       ========================================================= */
+    const controlBuscador = L.control({ position: 'topright' });
+    controlBuscador.onAdd = function () {
+        const div = L.DomUtil.create('div', 'control-buscador');
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+
+        div.innerHTML =
+            '<div class="menu-titulo-control">- Búsqueda por RL</div>' +
+            '<input type="text" id="inputRLM" placeholder="RL-2018-17378425-APN-DNFYAOAF#MA" />' +
+            '<div style="display: flex; gap: 8px;">' +
+                '<button id="btnBuscarRLM" type="button">Buscar</button>' +
+                '<button id="btnLimpiarRLM" type="button" style="display: none;">Limpiar</button>' +
+            '</div>';
+        return div;
+    };
+    controlBuscador.addTo(map);
+
+    /* =========================================================
+       7. ESTADO DE DATOS
+       ========================================================= */
+    let todoPuntosFilas = [];
+    let colsIndices = {};
+    let totalPuntos = 0;
+    let treeControlNafs = null;
+
+    const conteosActividad = {};
+    const conteosProvincia = {};
+    const conteosRegion = {};
+    const capasPorSubCategoria = {};   // Actividad principal -> provincia -> cluster
+    const capasPorcentaje = {};        // Actividad porcentual -> provincia -> cluster
+    const capasActividad = {};         // Actividad -> [todos sus clusters]
+    const estadoActividad = {};
+    const capaAActividad = new Map();
+
+    ACTIVIDADES.forEach(function (act) {
+        conteosActividad[act.key] = 0;
+        conteosProvincia[act.key] = {};
+        capasActividad[act.key] = [];
+        estadoActividad[act.key] = false;
+    });
+
+    const capaResultadoBusqueda = L.layerGroup().addTo(map);
+    let capasOcultasTemp = [];
+
+    function tieneValorValido(val) {
+        if (val === null || val === undefined) return false;
+        const texto = String(val).trim();
+        return texto !== '' && texto !== '0';
+    }
+
+    function aNumero(valor) {
+        if (typeof valor === 'number') return valor;
+        return parseFloat(String(valor === null || valor === undefined ? '' : valor).replace(',', '.'));
+    }
+
+    function analizarActividades(fila, cols) {
+        const actRaw = String(fila[cols.Actividad] === null || fila[cols.Actividad] === undefined ? '' : fila[cols.Actividad]).trim();
+        const esPrincipal = Object.prototype.hasOwnProperty.call(configCategorias, actRaw);
+        const actMain = esPrincipal ? actRaw : 'Otra';
+        const acts = new Set([actMain]);
+
+        ACTIVIDADES.forEach(function (act) {
+            if (!act.columna) return;
+            if (!Object.prototype.hasOwnProperty.call(cols, act.columna)) return;
+            if (tieneValorValido(fila[cols[act.columna]])) acts.add(act.key);
+        });
+
+        return { actMain: actMain, acts: acts };
+    }
+
+    function construirPopup(fila, cols, acts) {
+        const tags = Array.from(acts).map(function (act) {
+            return '<span class="popup-actividad" style="--color:' + mapaColores[act] + '">' +
+                esc(POR_CLAVE[act].label) + '</span>';
+        }).join('');
+
+        const descripcion = fila[cols.Actividad_descrip];
+        return '<div class="popup-contenido">' +
+            '<h4>' + esc(fila[cols.rlm] || 'N/A') + '</h4>' +
+            '<div class="popup-actividades">' + tags + '</div>' +
+            '<div class="popup-dato"><b>Región:</b> ' + esc(fila[cols.region] || '-') + '</div>' +
+            '<div class="popup-dato"><b>Provincia:</b> ' + esc(fila[cols.provincia] || '-') + '</div>' +
+            '<div class="popup-dato"><b>Fecha de alta:</b> ' + esc(fila[cols.fecha_alta] || '-') + '</div>' +
+            (descripcion ? '<div class="popup-dato"><b>Descripción:</b> ' + esc(descripcion) + '</div>' : '') +
+        '</div>';
+    }
+
+    function crearMarcadorPunto(color, lat, lng, fila, cols, acts, pane) {
+        const opciones = { icon: crearIconoPin(color), riseOnHover: true };
+        if (pane) opciones.pane = pane;
+        const marker = L.marker([lat, lng], opciones);
+        marker.bindPopup(construirPopup(fila, cols, acts), { maxWidth: 340, minWidth: 240 });
+        return marker;
+    }
+
+    function obtenerGrupo(coleccion, actividad, provincia, claseCss, opciones) {
+        if (!coleccion[actividad]) coleccion[actividad] = {};
+        if (!coleccion[actividad][provincia]) {
+            coleccion[actividad][provincia] = crearGrupoCluster(claseCss, opciones);
+        }
+        return coleccion[actividad][provincia];
+    }
+
+    /* =========================================================
+       8. PANEL DE TOTALES
+       ========================================================= */
+    const PALETA_REGIONES = ['#15803d', '#0d9488', '#0284c7', '#f59e0b', '#7c3aed', '#dc2626', '#64748b'];
+    const COLORES_REGION = {
+        'NEA': '#15803d',
+        'Centro': '#0d9488',
+        'NOA': '#0284c7',
+        'Cuyo': '#f59e0b',
+        'Patagonia': '#7c3aed'
+    };
+
+    let googleChartsListo = false;
+    let graficoRegiones = null;
+    let datosGraficoRegiones = [];
+
+    if (window.google && google.charts) {
+        google.charts.load('current', { packages: ['corechart'], language: 'es' });
+        google.charts.setOnLoadCallback(function () {
+            googleChartsListo = true;
+            if (datosGraficoRegiones.length) dibujarGraficoRegiones();
+        });
+    }
+
+    function colorRegion(nombre, indice) {
+        return COLORES_REGION[nombre] || PALETA_REGIONES[indice % PALETA_REGIONES.length];
+    }
+
+    function dibujarGraficoRegiones() {
+        if (!googleChartsListo || !datosGraficoRegiones.length) return;
+
+        const contenedor = document.getElementById('grafico-regiones');
+        if (!contenedor) return;
+
+        const ancho = Math.max(200, contenedor.clientWidth || 286);
+        const alto = 205;
+
+        const datos = new google.visualization.DataTable();
+        datos.addColumn('string', 'Región');
+        datos.addColumn('number', 'Puntos');
+        datosGraficoRegiones.forEach(function (region) {
+            datos.addRow([
+                region.nombre,
+                { v: region.valor, f: fmt(region.valor) }
+            ]);
+        });
+
+        if (!graficoRegiones) {
+            graficoRegiones = new google.visualization.PieChart(contenedor);
+        }
+
+        graficoRegiones.draw(datos, {
+            is3D: true,
+            width: ancho,
+            height: alto,
+            backgroundColor: 'transparent',
+            colors: datosGraficoRegiones.map(function (region) { return region.color; }),
+            legend: 'none',
+            pieSliceText: 'percentage',
+            pieSliceTextStyle: {
+                color: '#ffffff',
+                fontName: 'Inter',
+                fontSize: 11
+            },
+            pieStartAngle: 0,
+            enableInteractivity: true,
+            tooltip: {
+                textStyle: { fontName: 'Inter', fontSize: 12, color: '#0f172a' },
+                showColorCode: true
+            },
+            chartArea: {
+                left: 10,
+                top: 10,
+                width: ancho - 20,
+                height: alto - 20
+            },
+            fontName: 'Inter',
+            fontSize: 11
+        });
+    }
+
+    let temporizadorRegiones = null;
+    window.addEventListener('resize', function () {
+        if (!datosGraficoRegiones.length) return;
+        clearTimeout(temporizadorRegiones);
+        temporizadorRegiones = setTimeout(function () {
+            dibujarGraficoRegiones();
+        }, 180);
+    });
+
+    function renderizarPanel() {
+        const totalEl = document.getElementById('total-pais');
+        if (totalEl) totalEl.textContent = fmt(totalPuntos);
+
+        const lista = document.getElementById('lista-actividades');
+        if (lista) {
+            const maxConteo = Math.max.apply(null, [1].concat(ACTIVIDADES.map(function (act) {
+                return conteosActividad[act.key] || 0;
+            })));
+
+            lista.innerHTML = ACTIVIDADES.map(function (act) {
+                const n = conteosActividad[act.key] || 0;
+                const activo = !!estadoActividad[act.key];
+                const ancho = Math.max(2, Math.round((n / maxConteo) * 100));
+                const pctPais = totalPuntos ? ((n / totalPuntos) * 100).toFixed(1).replace('.', ',') : '0';
+
+                return '<button type="button" class="actividad' + (activo ? '' : ' is-off') + '" ' +
+                        'data-actividad="' + act.key + '" style="--color:' + act.color + '" ' +
+                        'aria-pressed="' + activo + '" ' +
+                        'title="' + esc(act.label) + ': ' + fmt(n) + ' puntos (' + pctPais + '% del total país). ' +
+                        'Clic para ' + (activo ? 'ocultar' : 'mostrar') + ' en el mapa.">' +
+                    '<span class="punto-color" aria-hidden="true"></span>' +
+                    '<span class="actividad-texto">' +
+                        '<span class="actividad-nombre">' + esc(act.label) + '</span>' +
+                        '<span class="actividad-barra" aria-hidden="true"><span style="width:' + ancho + '%"></span></span>' +
+                    '</span>' +
+                    '<span class="actividad-conteo">' + fmt(n) + '</span>' +
+                    '<span class="actividad-ojo" aria-hidden="true">' +
+                        '<svg class="ojo-on" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                            '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"></path><circle cx="12" cy="12" r="3"></circle>' +
+                        '</svg>' +
+                        '<svg class="ojo-off" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+                            '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>' +
+                            '<line x1="1" y1="1" x2="23" y2="23"></line>' +
+                        '</svg>' +
+                    '</span>' +
+                '</button>';
+            }).join('');
+        }
+
+        const contRegiones = document.getElementById('lista-regiones');
+        if (contRegiones) {
+            const regiones = Object.keys(conteosRegion)
+                .map(function (region, indice) {
+                    return {
+                        nombre: region,
+                        valor: conteosRegion[region],
+                        color: colorRegion(region, indice)
+                    };
+                })
+                .sort(function (a, b) { return b.valor - a.valor; });
+
+            datosGraficoRegiones = regiones;
+            graficoRegiones = null;
+
+            if (!regiones.length) {
+                contRegiones.innerHTML = '<div class="panel-cargando">Sin datos de regiones.</div>';
+                return;
+            }
+
+            contRegiones.innerHTML =
+                '<div id="grafico-regiones" class="grafico-regiones" role="img" ' +
+                    'aria-label="Distribución de puntos georreferenciados por región">' +
+                    '<div class="panel-cargando">Cargando gráfico…</div>' +
+                '</div>' +
+                '<div class="leyenda-regiones">' +
+                    regiones.map(function (region) {
+                        const pct = totalPuntos
+                            ? ((region.valor / totalPuntos) * 100).toFixed(1).replace('.', ',')
+                            : '0';
+                        return '<div class="leyenda-region" title="' + esc(region.nombre) + ': ' +
+                                fmt(region.valor) + ' puntos (' + pct + '%)">' +
+                            '<span class="leyenda-color" style="--color:' + region.color + '" aria-hidden="true"></span>' +
+                            '<span class="leyenda-nombre">' + esc(region.nombre) + '</span>' +
+                            '<span class="leyenda-valor">' + fmt(region.valor) + '</span>' +
+                        '</div>';
+                    }).join('') +
+                '</div>';
+
+            dibujarGraficoRegiones();
+        }
+    }
+
+    function actualizarFilaActividad(actividad) {
+        const btn = document.querySelector('.actividad[data-actividad="' + actividad + '"]');
+        if (!btn) return;
+
+        const activo = capasActividad[actividad].some(function (layer) {
+            return map.hasLayer(layer);
+        });
+        estadoActividad[actividad] = activo;
+
+        btn.classList.toggle('is-off', !activo);
+        btn.setAttribute('aria-pressed', String(activo));
+
+        const n = conteosActividad[actividad] || 0;
+        const pctPais = totalPuntos ? ((n / totalPuntos) * 100).toFixed(1).replace('.', ',') : '0';
+        btn.title = POR_CLAVE[actividad].label + ': ' + fmt(n) + ' puntos (' + pctPais +
+            '% del total país). Clic para ' + (activo ? 'ocultar' : 'mostrar') + ' en el mapa.';
+    }
+
+    function sincronizarCheckboxesArbol() {
+        const container = treeControlNafs && treeControlNafs.getContainer();
+        if (!container) return;
+
+        const headers = container.querySelectorAll('.leaflet-layerstree-header');
+        Array.prototype.forEach.call(headers, function (header) {
+            const selAll = header.querySelector('.leaflet-layerstree-sel-all-checkbox');
+            if (!selAll) return;
+
+            const nodo = header.closest('.leaflet-layerstree-node') || header.parentElement;
+            const inputs = Array.prototype.filter.call(
+                nodo.querySelectorAll('input[type="checkbox"]'),
+                function (input) { return input !== selAll && !input.classList.contains('leaflet-layerstree-sel-all-checkbox'); }
+            );
+
+            if (!inputs.length) return;
+
+            const todos = inputs.every(function (input) { return input.checked; });
+            const ninguno = inputs.every(function (input) { return !input.checked; });
+
+            selAll.checked = todos;
+            selAll.indeterminate = !todos && !ninguno;
+        });
+    }
+
+    function alternarActividad(actividad) {
+        const capas = capasActividad[actividad] || [];
+        const activar = !capas.some(function (layer) { return map.hasLayer(layer); });
+        const ctrl = treeControlNafs;
+
+        if (ctrl) ctrl._handlingClick = true;
+        try {
+            capas.forEach(function (layer) {
+                if (activar) {
+                    if (!map.hasLayer(layer)) map.addLayer(layer);
+                } else if (map.hasLayer(layer)) {
+                    map.removeLayer(layer);
+                }
+            });
+
+            if (ctrl && ctrl._layerControlInputs) {
+                const ids = new Set(capas.map(function (layer) { return L.Util.stamp(layer); }));
+                ctrl._layerControlInputs.forEach(function (input) {
+                    if (ids.has(input.layerId)) {
+                        input.checked = activar;
+                        input.indeterminate = false;
+                    }
+                });
+            }
+        } finally {
+            if (ctrl) ctrl._handlingClick = false;
+        }
+
+        sincronizarCheckboxesArbol();
+        actualizarFilaActividad(actividad);
+    }
+
+    /* =========================================================
+       9. CARGA Y PROCESAMIENTO DE PUNTOS
+       ========================================================= */
+    fetch('datos_puntos3.json')
+        .then(function (res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+        })
+        .then(function (respuesta) {
+            todoPuntosFilas = respuesta.filas || [];
+
+            (respuesta.columnas || []).forEach(function (nombre, index) {
+                colsIndices[nombre] = index;
+            });
+
+            const cols = colsIndices;
+
+            todoPuntosFilas.forEach(function (fila) {
+                const lat = aNumero(fila[cols.lat]);
+                const lng = aNumero(fila[cols.lng]);
+
+                if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return;
+
+                const provincia = String(fila[cols.provincia] === null || fila[cols.provincia] === undefined ? '' : fila[cols.provincia]).trim() || 'Sin Provincia';
+                const region = String(fila[cols.region] === null || fila[cols.region] === undefined ? '' : fila[cols.region]).trim() || 'Sin Región';
+
+                const analisis = analizarActividades(fila, cols);
+                const actMain = analisis.actMain;
+                const acts = analisis.acts;
+
+                totalPuntos += 1;
+                conteosRegion[region] = (conteosRegion[region] || 0) + 1;
+
+                acts.forEach(function (act) {
+                    conteosActividad[act] = (conteosActividad[act] || 0) + 1;
+                    conteosProvincia[act][provincia] = (conteosProvincia[act][provincia] || 0) + 1;
+                });
+
+                // Capa principal: todo punto aparece al menos una vez en el mapa.
+                const grupoPrincipal = obtenerGrupo(
+                    capasPorSubCategoria,
+                    actMain,
+                    provincia,
+                    claseCluster[actMain]
+                );
+                grupoPrincipal.addLayer(
+                    crearMarcadorPunto(mapaColores[actMain], lat, lng, fila, cols, acts)
+                );
+
+                // Capas porcentuales: Pesca, Turismo, Caza, Artesanías y Agroindustria.
+                ACTIVIDADES.forEach(function (act) {
+                    if (!act.columna) return;
+                    if (act.key === actMain) return; // Evita duplicar el mismo punto en la misma actividad.
+                    if (!Object.prototype.hasOwnProperty.call(cols, act.columna)) return;
+                    if (!tieneValorValido(fila[cols[act.columna]])) return;
+
+                    const grupo = obtenerGrupo(
+                        capasPorcentaje,
+                        act.key,
+                        provincia,
+                        claseCluster[act.key],
+                        { pane: 'panePorcentajes', clusterPane: 'panePorcentajes' }
+                    );
+                    grupo.addLayer(
+                        crearMarcadorPunto(mapaColores[act.key], lat, lng, fila, cols, acts, 'panePorcentajes')
+                    );
+                });
+            });
+
+            // Las capas principales se muestran desde el inicio.
+            Object.keys(capasPorSubCategoria).forEach(function (act) {
+                Object.keys(capasPorSubCategoria[act]).forEach(function (provincia) {
+                    map.addLayer(capasPorSubCategoria[act][provincia]);
+                });
+            });
+
+            // Consolidado de capas por actividad.
+            ACTIVIDADES.forEach(function (act) {
+                capasActividad[act.key] = [];
+            });
+
+            Object.keys(capasPorSubCategoria).forEach(function (act) {
+                if (!capasActividad[act]) capasActividad[act] = [];
+                Object.keys(capasPorSubCategoria[act]).forEach(function (provincia) {
+                    capasActividad[act].push(capasPorSubCategoria[act][provincia]);
+                });
+            });
+
+            Object.keys(capasPorcentaje).forEach(function (act) {
+                if (!capasActividad[act]) capasActividad[act] = [];
+                Object.keys(capasPorcentaje[act]).forEach(function (provincia) {
+                    capasActividad[act].push(capasPorcentaje[act][provincia]);
+                });
+            });
+
+            ACTIVIDADES.forEach(function (act) {
+                estadoActividad[act.key] = capasActividad[act.key].some(function (layer) {
+                    return map.hasLayer(layer);
+                });
+                capasActividad[act.key].forEach(function (layer) {
+                    capaAActividad.set(L.Util.stamp(layer), act.key);
+                });
+            });
+
+            map.on('layeradd layerremove', function (e) {
+                const act = capaAActividad.get(L.Util.stamp(e.layer));
+                if (act) actualizarFilaActividad(act);
+            });
+
+            // Árbol derecho: "Info ReNAF" con contadores.
+            function construirHijosProvincia(objetoCapas, actividad) {
+                const hijos = [];
+                Object.keys(objetoCapas).sort(function (a, b) {
+                    return a.localeCompare(b, 'es');
+                }).forEach(function (provincia) {
+                    const n = (conteosProvincia[actividad] && conteosProvincia[actividad][provincia]) || 0;
+                    hijos.push({
+                        label: esc(provincia) + ' <span class="tree-count">' + fmt(n) + '</span>',
+                        layer: objetoCapas[provincia]
+                    });
+                });
+                return hijos;
+            }
+
+            const ordenActividades = ACTIVIDADES.map(function (act) { return act.key; });
+            const ramasCategorias = [];
+
+            Object.keys(capasPorSubCategoria)
+                .sort(function (a, b) { return ordenActividades.indexOf(a) - ordenActividades.indexOf(b); })
+                .forEach(function (act) {
+                    const rama = {
+                        label: '<span data-arbol-act="' + act + '"><b>' + esc(POR_CLAVE[act].label) + '</b> ' +
+                               '<span class="tree-count">' + fmt(conteosActividad[act]) + '</span></span>',
+                        selectAllCheckbox: 'Desactivar/Activar categoría',
+                        collapsed: true,
+                        children: construirHijosProvincia(capasPorSubCategoria[act], act)
+                    };
+                    ramasCategorias.push(rama);
+                });
+
+            const arbolNafs = [
+                {
+                    label: '<span data-arbol-act="__nafs__"><b>Mapeo de NAF\'s</b> ' +
+                           '<span class="tree-count">' + fmt(totalPuntos) + '</span></span>',
+                    selectAllCheckbox: 'Desactivar/Activar NAFs',
+                    collapsed: false,
+                    children: ramasCategorias
+                }
+            ];
+
+            ACTIVIDADES.forEach(function (act) {
+                if (!act.columna || !capasPorcentaje[act.key]) return;
+                arbolNafs.push({
+                    label: '<span data-arbol-act="' + act.key + '"><b>' + esc(act.label) + '</b> ' +
+                           '<span class="tree-count">' + fmt(conteosActividad[act.key]) + '</span></span>',
+                    selectAllCheckbox: 'Desactivar/Activar ' + act.label,
+                    collapsed: true,
+                    children: construirHijosProvincia(capasPorcentaje[act.key], act.key)
+                });
+            });
+
+            treeControlNafs = L.control.layers.tree(null, arbolNafs, {
+                namedToggle: false,
+                collapseAll: false,
+                expandAll: false,
+                collapsed: false,
+                position: 'topright'
+            }).addTo(map);
+
+            agregarTituloControl(treeControlNafs, '- Info ReNAF');
+
+            const containerNafs = treeControlNafs.getContainer();
+            const containerCapas = treeControlCapas.getContainer();
+            const containerBuscador = controlBuscador.getContainer();
+
+            if (containerNafs && containerCapas && containerNafs.parentNode === containerCapas.parentNode) {
+                containerCapas.parentNode.insertBefore(containerNafs, containerCapas);
+                if (containerBuscador) containerCapas.parentNode.appendChild(containerBuscador);
+            }
+
+            renderizarPanel();
+            ACTIVIDADES.forEach(function (act) { actualizarFilaActividad(act.key); });
+        })
+        .catch(function (err) {
+            console.error('Error al cargar datos_puntos3.json:', err);
+            const lista = document.getElementById('lista-actividades');
+            if (lista) {
+                lista.innerHTML = '<div class="panel-cargando">No se pudieron cargar los datos.<br>Revisá la consola.</div>';
+            }
+            const regiones = document.getElementById('lista-regiones');
+            if (regiones) regiones.innerHTML = '';
+        });
+
+    /* =========================================================
+       10. BÚSQUEDA POR RL
+       ========================================================= */
+    function ejecutarBusquedaRLM() {
+        const input = document.getElementById('inputRLM');
+        if (!input) return;
+
+        const consulta = input.value.trim().toLowerCase();
+        if (!consulta) {
+            alert('Por favor, ingrese un código RLM para buscar.');
+            return;
+        }
+
+        const cols = colsIndices;
+        const registroEncontrado = todoPuntosFilas.find(function (fila) {
+            const rlmValor = fila[cols.rlm] ? String(fila[cols.rlm]).trim().toLowerCase() : '';
+            return rlmValor === consulta;
+        });
+
+        if (!registroEncontrado) {
+            alert('El RLM ingresado no existe en la base de datos.');
+            return;
+        }
+
+        restaurarCapasOriginales();
+        capasOcultasTemp = [];
+
+        map.eachLayer(function (layer) {
+            if (layer instanceof L.TileLayer) return;
+            if (layer === capaResultadoBusqueda) return;
+            map.removeLayer(layer);
+            capasOcultasTemp.push(layer);
+        });
+
+        const lat = aNumero(registroEncontrado[cols.lat]);
+        const lng = aNumero(registroEncontrado[cols.lng]);
+        const analisis = analizarActividades(registroEncontrado, cols);
+        const colorBusqueda = mapaColores[analisis.actMain] || mapaColores.Otra;
+
+        const marcadorEncontrado = crearMarcadorPunto(
+            colorBusqueda,
+            lat,
+            lng,
+            registroEncontrado,
+            cols,
+            analisis.acts
+        );
+
+        capaResultadoBusqueda.clearLayers();
+        capaResultadoBusqueda.addLayer(marcadorEncontrado);
+
+        map.setView([lat, lng], 15);
+        marcadorEncontrado.openPopup();
+
+        const btnLimpiar = document.getElementById('btnLimpiarRLM');
+        if (btnLimpiar) btnLimpiar.style.display = 'inline-block';
+    }
+
+    function restaurarCapasOriginales() {
+        capaResultadoBusqueda.clearLayers();
+        if (capasOcultasTemp.length > 0) {
+            capasOcultasTemp.forEach(function (layer) { map.addLayer(layer); });
+            capasOcultasTemp = [];
+        }
+        const btnLimpiar = document.getElementById('btnLimpiarRLM');
+        if (btnLimpiar) btnLimpiar.style.display = 'none';
+    }
+
+    /* =========================================================
+       11. EVENTOS DE INTERFAZ
+       ========================================================= */
+    const listaActividades = document.getElementById('lista-actividades');
+    if (listaActividades) {
+        listaActividades.addEventListener('click', function (e) {
+            const btn = e.target.closest('button[data-actividad]');
+            if (!btn) return;
+            alternarActividad(btn.getAttribute('data-actividad'));
+        });
+    }
+
+    const btnRegiones = document.getElementById('btn-regiones');
+    const listaRegiones = document.getElementById('lista-regiones');
+    if (btnRegiones && listaRegiones) {
+        btnRegiones.addEventListener('click', function () {
+            const abierto = btnRegiones.getAttribute('aria-expanded') === 'true';
+            btnRegiones.setAttribute('aria-expanded', String(!abierto));
+            listaRegiones.classList.toggle('is-hidden', abierto);
+            if (!abierto) dibujarGraficoRegiones();
+        });
+    }
+
+    const panelResumen = document.getElementById('panel-resumen');
+    const btnPanelToggle = document.getElementById('btn-panel-toggle');
+    if (panelResumen && btnPanelToggle) {
+        btnPanelToggle.addEventListener('click', function () {
+            const colapsado = panelResumen.classList.toggle('is-collapsed');
+            btnPanelToggle.setAttribute('aria-expanded', String(!colapsado));
+            btnPanelToggle.title = colapsado ? 'Mostrar panel' : 'Ocultar panel';
+            if (!colapsado) dibujarGraficoRegiones();
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (e.target && e.target.id === 'btnBuscarRLM') {
+            ejecutarBusquedaRLM();
+        }
+        if (e.target && e.target.id === 'btnLimpiarRLM') {
+            const input = document.getElementById('inputRLM');
+            if (input) input.value = '';
+            restaurarCapasOriginales();
+            ajustarVistaInicial();
+        }
+    });
+
+    document.addEventListener('keydown', function (e) {
+        if (e.target && e.target.id === 'inputRLM' && e.key === 'Enter') {
+            e.preventDefault();
+            ejecutarBusquedaRLM();
+        }
+    });
+})();
+</script>
+</body>
+</html>
